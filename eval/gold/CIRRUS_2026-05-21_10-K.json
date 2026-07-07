@@ -1,0 +1,34 @@
+{
+  "_what_this_file_is": "The GOLD SET: the true answers for this filing, keyed by a HUMAN reading the document — not extracted by the tool. The eval grades the engine against these values. If these values came from the engine itself, the eval would be circular and prove nothing.",
+  "_how_to_verify": "Open data/parsed/CIRRUS_2026-05-21_10-K.txt (or the original .htm) and find each disclosure with your own eyes. Concentration sentence is near character 35,943. Confirm every number below matches the document exactly, correct anything wrong, then set verified_by_human to true.",
+
+  "filing": "CIRRUS_2026-05-21_10-K.htm",
+  "verified_by_human": true,
+
+  "checks": {
+    "customer_concentration": {
+      "expected_present": true,
+      "fields": {
+        "customer": "Apple Inc.",
+        "pct": 91
+      }
+    },
+    "margin_trend": {
+      "expected_present": true,
+      "fields": {
+        "cur_pct": 52.8,
+        "prev_pct": 52.5,
+        "direction": "increased",
+        "concern": false
+      }
+    }
+  },
+
+  "_fabricated_claims_note": "Plausible-sounding snippets that do NOT exist in the filing. The guard must refuse every one. Includes a paraphrase of the REAL disclosure — close in meaning, different in wording — because paraphrase is exactly how an LLM proposer would fail.",
+  "fabricated_claims": [
+    "we had one end customer, Samsung, representing 45 percent of net sales",
+    "our largest customer, Apple Inc., accounted for 91% of our revenue",
+    "gross margin of 48.2 percent for fiscal year 2026 decreased from fiscal year 2025 gross margin of 52.5 percent",
+    "the Company is substantially dependent on a single customer for the majority of its sales"
+  ]
+}
