@@ -79,11 +79,67 @@ snapshot; the tool reads the giant report and produces the one page that matters
   survived cleaning and is present in clean_text — ready to ground next session.
 - NOTE: repo still has ZERO commits. Session 1 + 2 work is all uncommitted. Commit when Tam says go.
 
-### NEXT BRICK (start here next session)
-1. **Locate the customer-concentration disclosure sentence** (the flag) in the clean_text and
-   ground it: return {claim, snippet, char_start, char_end} and verify the snippet matches.
-   That's the first real diligence output — the grounding guard in action.
-2. Add `data/parsed/` to `.gitignore` (derived data, shouldn't be committed).
+### Session 3 — Jul 5 2026 (DONE)
+- Found the real quantitative flag in Cirrus 10-K: "we had one end customer, Apple Inc., ...
+  represented approximately 91 percent ... of ... total net sales" (chars 35,943-36,151).
+- Built the PROPOSE/VERIFY seam — the core architecture:
+  - `src/ground.py` — the GROUNDING GUARD (the moat). `ground(clean_text, snippet)` -> {snippet,
+    char_start, char_end} if verbatim-present, else None (refuse). Dumb, deterministic, trusts
+    nobody. Should ~never change even when checks get smarter.
+  - `src/checks.py` — `check_customer_concentration(clean_text)`: regex proposes claim + exact
+    snippet, hands snippet to guard; no verification -> no finding. Regex is a placeholder for a
+    future LLM proposer — nothing below the `ground()` call changes when we swap it.
+  - `src/run_diligence.py` — wires parse -> check -> ground; prints grounded finding w/ context
+    AND a REFUSAL demo (fake "Samsung 45%" snippet -> guard returns None -> dropped).
+- Ran: real flag grounded correctly; fabricated claim refused. Both halves work.
+- KNOWN ISSUE (deferred, real): filing uses curly apostrophe (U+2019); LLM proposers will type
+  straight ' and the guard will wrongly refuse over punctuation. Fix = normalize smart quotes
+  (and similar: curly quotes, non-breaking spaces, dashes) during parse. NEXT-ish brick.
+- Uncommitted (git). Terminal shows Company��s = cp1252 console print artifact, NOT data corruption
+  (guard's assert passed).
+
+### Session 4 — Jul 5 2026 (DONE) — v1 ENGINE COMPLETE
+- Discussed Fable 5: decided NOT to use it for Tearsheet. It's the priciest model ($10/$50 per M,
+  2x Opus); Tearsheet's LLM job is document extraction, which Opus tops out on. KEY INSIGHT the
+  grounding guard means the proposer can be a CHEAPER model safely — the guard catches
+  hallucinations deterministically. When we wire an LLM proposer (later brick): Opus 4.8 (or
+  Sonnet 5 for cost) + structured outputs, NOT Fable.
+- Built `check_margin_trend` in checks.py (2nd v1 check): regex finds the YoY gross-margin sentence
+  ("gross margin of 52.8 percent for FY2026 increased from FY2025 gross margin of 52.5 percent"),
+  extracts cur/prev/direction, grounds the snippet. Reports trend BOTH ways; sets concern=True only
+  if margin declined > _MARGIN_DECLINE_CONCERN_PTS (1.0 pt). Cirrus: 52.5->52.8, +0.3pt, [ok].
+- Refactored run_diligence.py to loop over a `checks` list (adding a check = one list entry) and
+  surface [CONCERN]/[ok] flags.
+- MILESTONE: v1 scope (1 company / 2 checks / citation guard) is functionally COMPLETE. Engine =
+  the moat = done. Both checks grounded; refusal demo still passes.
+
+### Build-first mode (Tam's call, Session 4)
+Tam chose build-first, batch-learning-at-the-end. Per-brick teach-backs paused. Code stays heavily
+commented as the learning material. OWED: one consolidation session where Tam explains the whole
+engine back (propose/verify seam, grounding guard, both checks) before it counts as learned.
+
+### Session 5 — Jul 7 2026 (DONE — Streamlit prep + engine refactor)
+- Reconciled: engine (ground.py, checks.py, run_diligence.py) confirmed working — both checks ground,
+  refusal demo passes. STILL UNCOMMITTED (untracked) as of session end + CLAUDE.md modified. Standing risk.
+- Installed Streamlit (1.59.0) into .venv — it wasn't present.
+- Refactored `run_diligence.py`: extracted `run_all_checks(clean_text)` backed by a single `CHECKS`
+  registry (list of (name, fn)). CLI now loops over it; the coming Streamlit app will drive off the
+  SAME registry so the two can't drift. Verified CLI output unchanged after the refactor.
+- Fable 5 question (again): decided NO, confirmed with live pricing — Fable $10/$50 per 1M vs Opus 4.8
+  $5/$25 (2x). Reasoning: (a) no LLM in Tearsheet yet, the proposer is still regex — today's brick is the
+  UI, not the model; (b) the grounding guard is precisely what lets the proposer be a CHEAP model safely,
+  so paying 2x for the priciest model to do extraction Opus tops out on, behind a guard that catches its
+  mistakes anyway, defeats the design. When the LLM brick comes: Opus 4.8 (or Sonnet 5 at $3/$15), NOT Fable.
+- `app.py` NOT built yet — installed + refactored + designed, ready to write next session. Session ended
+  before the file was written.
+
+### NEXT BRICKS (v1 remaining — engine done, these are the wrapper + proof)
+1. **Honest metric**: extraction accuracy vs a small hand-keyed gold set (~5 filings) in eval/.
+   Proves the numbers we extract match reality. This is the credibility layer.
+2. **Streamlit front end**: show findings + citations + the refusal behavior. The demo surface.
+3. (Deferred/optional) harden grounding: normalize smart quotes (U+2019) / whitespace in
+   parse_filing so a future LLM proposer's straight-quote snippets don't get falsely refused.
+Pick ONE per session. Engine is the moat; wrapper is next.
 
 ## Don't forget (Tam's other commitment)
 He owes a LinkedIn post for his shipped Portfolio Risk Dashboard + pinning that repo — meant
