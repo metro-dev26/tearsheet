@@ -76,8 +76,31 @@ def badge(finding: dict) -> str:
 # ---------------------------------------------------------------------------
 # Page
 # ---------------------------------------------------------------------------
-st.set_page_config(page_title="Tearsheet", page_icon="📄", layout="wide")
+st.set_page_config(page_title="Tearsheet — SEC 10-K diligence with receipts",
+                   page_icon="📄", layout="wide")
 
+# A LITTLE presentation CSS. Kept minimal and targeting only stable containers:
+# cap the content width so text isn't stretched across an ultrawide monitor
+# (the default wide layout looked sparse), and give the page some top breathing
+# room. Everything visual beyond this lives in .streamlit/config.toml, which is
+# the version-proof way to theme Streamlit.
+st.markdown(
+    """
+    <style>
+      .block-container { max-width: 1080px; padding-top: 3rem; padding-bottom: 4rem; }
+      [data-testid="stMetricValue"] { font-size: 1.9rem; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# --- header: eyebrow + title + one-line positioning ------------------------
+st.markdown(
+    "<div style='letter-spacing:.14em;font-size:.72rem;font-weight:600;"
+    "color:#4f8cff;text-transform:uppercase;margin-bottom:.2rem;'>"
+    "SEC 10-K diligence · with receipts</div>",
+    unsafe_allow_html=True,
+)
 st.title("📄 Tearsheet")
 st.markdown(
     "Reads a company's SEC 10-K and flags what a diligence analyst would care "
@@ -95,10 +118,42 @@ except FileNotFoundError as e:
     st.stop()
 
 clean_text, n_chunks = load_filing(str(filing_path))
+
+# Run the whole engine ONCE, up front, so both the summary tiles and the
+# detailed cards below read from the same results (no double work, no drift).
+results = list(run_all_checks(clean_text))
+n_grounded = sum(1 for _, f in results if f is not None)
+
+# The fabricated claims the guard must refuse. These MIRROR eval/gold/*.json —
+# same set the automated eval grades against — including a paraphrase of the
+# REAL disclosure (same meaning, different words), which is exactly how an LLM
+# proposer fails. We run them through the guard live, below.
+FABRICATED = [
+    ("we had one end customer, Samsung, representing 45 percent of net sales",
+     "Wrong customer, wrong number — pure invention."),
+    ("our largest customer, Apple Inc., accounted for 91% of our revenue",
+     "A PARAPHRASE of the real disclosure: correct in meaning, not verbatim. "
+     "The guard still refuses it — meaning is not proof."),
+    ("gross margin of 48.2 percent for fiscal year 2026 decreased from fiscal "
+     "year 2025 gross margin of 52.5 percent",
+     "Right shape, fabricated numbers."),
+    ("the Company is substantially dependent on a single customer for the "
+     "majority of its sales",
+     "True in spirit, absent from the text as written."),
+]
+n_refused = sum(1 for snippet, _ in FABRICATED if ground(clean_text, snippet) is None)
+
 st.caption(
     f"Filing: `{filing_path.name}` · {len(clean_text):,} characters of "
     f"disclosure text · {n_chunks:,} traceable chunks"
 )
+
+# --- summary tiles: the state of the analysis at a glance ------------------
+t1, t2, t3, t4 = st.columns(4)
+t1.metric("Checks run", len(results))
+t2.metric("Grounded findings", n_grounded)
+t3.metric("Fabricated claims refused", f"{n_refused}/{len(FABRICATED)}")
+t4.metric("Disclosure parsed", f"{len(clean_text) // 1000}K chars")
 
 st.divider()
 
@@ -109,7 +164,22 @@ st.divider()
 # ---------------------------------------------------------------------------
 st.header("Diligence findings")
 
-for name, finding in run_all_checks(clean_text):
+
+def headline_metric(finding: dict) -> None:
+    """DISPLAY ONLY: the one number a reader should see first, as a metric tile.
+    This is presentation formatting, not diligence logic — a check the engine
+    doesn't recognize simply gets no tile and still renders its claim + proof."""
+    if finding["check"] == "customer_concentration":
+        st.metric(f"{finding['customer']} — share of net sales", f"{finding['pct']}%")
+    elif finding["check"] == "margin_trend":
+        st.metric(
+            f"Gross margin ({finding['direction']})",
+            f"{finding['cur_pct']}%",
+            delta=f"{finding['delta_pts']:+.1f} pt YoY",
+        )
+
+
+for name, finding in results:
     pretty = name.replace("_", " ").title()
 
     if finding is None:
@@ -127,24 +197,29 @@ for name, finding in run_all_checks(clean_text):
     with st.container(border=True):
         st.subheader(f"{pretty} {badge(finding)}")
 
-        # The CLAIM — a human paraphrase built by the check. Readable, but
-        # never trusted on its own...
-        st.markdown(f"**Claim:** {finding['claim']}")
+        # Left: the headline number. Right: the claim + the proof behind it.
+        metric_col, detail_col = st.columns([1, 2.4])
+        with metric_col:
+            headline_metric(finding)
+        with detail_col:
+            # The CLAIM — a human paraphrase built by the check. Readable, but
+            # never trusted on its own...
+            st.markdown(f"**Claim:** {finding['claim']}")
 
-        # ...because THIS is what makes it trustworthy: the verbatim words
-        # from the filing, and exactly where they live.
-        st.markdown("**Verbatim source quote** (verified by the grounding guard):")
-        st.code(finding["snippet"], language=None, wrap_lines=True)
-        st.caption(
-            f"Proof: characters {finding['char_start']:,}–{finding['char_end']:,} "
-            f"of the parsed filing. `clean_text[start:end]` equals the quote "
-            f"above, character for character."
-        )
+            # ...because THIS is what makes it trustworthy: the verbatim words
+            # from the filing, and exactly where they live.
+            st.markdown("**Verbatim source quote** (verified by the grounding guard):")
+            st.code(finding["snippet"], language=None, wrap_lines=True)
+            st.caption(
+                f"Proof: characters {finding['char_start']:,}–{finding['char_end']:,} "
+                f"of the parsed filing. `clean_text[start:end]` equals the quote "
+                f"above, character for character."
+            )
 
-        # The quote in its natural habitat, so you can see it isn't cropped
-        # out of context. Hidden behind an expander to keep the card compact.
-        with st.expander("See the quote in surrounding filing text"):
-            st.code(context_view(clean_text, finding), language=None, wrap_lines=True)
+            # The quote in its natural habitat, so you can see it isn't cropped
+            # out of context. Hidden behind an expander to keep the card compact.
+            with st.expander("See the quote in surrounding filing text"):
+                st.code(context_view(clean_text, finding), language=None, wrap_lines=True)
 
 st.divider()
 
@@ -153,28 +228,30 @@ st.divider()
 #
 # Anyone can build a tool that always has an answer. Tearsheet's differentiator
 # is that it REFUSES to make a claim it cannot physically locate in the filing.
-# Here we hand the guard a fabricated, plausible-sounding disclosure and show
-# it getting dropped. Same guard, same function, no special casing.
+# We hand the guard four fabricated-but-plausible disclosures and show each one
+# getting dropped. Same guard, same function, no special casing — the same set
+# the automated eval grades against.
 # ---------------------------------------------------------------------------
 st.header("🛡️ The grounding guard — watch it refuse")
 st.markdown(
     "LLMs hallucinate plausible-sounding financial facts. Tearsheet's guard is "
     "**dumb and deterministic on purpose**: a claim only survives if its exact "
-    "words physically exist in the filing. Below, we feed it a fabricated "
-    "disclosure that *sounds* real:"
+    "words physically exist in the filing. Below are four fabricated disclosures "
+    "that *sound* real — including a paraphrase of the genuine finding. The guard "
+    "refuses every one."
 )
 
-FAKE_SNIPPET = "we had one end customer, Samsung, representing 45 percent of net sales"
-st.code(FAKE_SNIPPET, language=None, wrap_lines=True)
+for snippet, why in FABRICATED:
+    with st.container(border=True):
+        st.code(snippet, language=None, wrap_lines=True)
+        if ground(clean_text, snippet) is None:
+            st.markdown(f":green[**REFUSED — dropped.**] {why}")
+        else:
+            # This should be impossible. If it ever happens, the guard is broken
+            # and we say so loudly instead of pretending everything is fine.
+            st.error(f"BUG: the guard accepted a fabricated snippet: {snippet!r}")
 
-result = ground(clean_text, FAKE_SNIPPET)
-if result is None:
-    st.success(
-        "**REFUSED — claim dropped.** These words do not exist in the filing, "
-        "so no citation can be produced and the claim is never shown. "
-        "Refusing is a feature: *\"I can't prove it, so I won't say it.\"*"
-    )
-else:
-    # This should be impossible. If it ever happens, the guard is broken and
-    # we say so loudly instead of pretending everything is fine.
-    st.error(f"BUG: the guard accepted a fabricated snippet -> {result}")
+st.success(
+    f"**{n_refused} of {len(FABRICATED)} fabricated claims refused.** "
+    "Refusing is the feature: *\"I can't prove it, so I won't say it.\"*"
+)
