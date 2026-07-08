@@ -2,5 +2,6 @@
 __pycache__/
 *.pyc
 .env
-data/filings/
+data/filings/*
+!data/filings/CIRRUS_2026-05-21_10-K.htm
 data/parsed/
