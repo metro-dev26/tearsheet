@@ -1,12 +1,11 @@
-# Tearsheet theme. This is the OFFICIALLY supported way to restyle a Streamlit
-# app — it works identically locally and on Streamlit Community Cloud, and it
-# won't break when Streamlit changes its internal HTML (hand-written CSS does).
-# Palette: GitHub-dark base + a blue accent, so it reads as a deliberate,
-# finished tool rather than the stock gray default.
+# Tearsheet theme — "equity research note" look. Light/paper, serif, editorial.
+# This is the OFFICIALLY supported way to restyle Streamlit; it works identically
+# locally and on Streamlit Community Cloud. The heavy lifting is in app.py's CSS,
+# but these base colors make Streamlit's own chrome match the paper aesthetic.
 [theme]
-base = "dark"
-primaryColor = "#4f8cff"            # accent: links, focus
-backgroundColor = "#0b0e14"         # page (matches app.py --bg)
-secondaryBackgroundColor = "#12161f" # matches app.py --surface
-textColor = "#e6edf3"
-font = "sans serif"
+base = "light"
+primaryColor = "#8a2b1e"             # oxblood accent (flags, links)
+backgroundColor = "#f7f4ee"          # warm paper (matches app.py --paper)
+secondaryBackgroundColor = "#efeadf" # matches app.py --paper2
+textColor = "#1c1a17"                # warm near-black ink
+font = "serif"
