@@ -5,8 +5,8 @@
 # finished tool rather than the stock gray default.
 [theme]
 base = "dark"
-primaryColor = "#4f8cff"            # accent: links, expander headers, focus
-backgroundColor = "#0d1117"         # page
-secondaryBackgroundColor = "#161b22" # cards, code blocks, metric tiles
+primaryColor = "#4f8cff"            # accent: links, focus
+backgroundColor = "#0b0e14"         # page (matches app.py --bg)
+secondaryBackgroundColor = "#12161f" # matches app.py --surface
 textColor = "#e6edf3"
 font = "sans serif"
