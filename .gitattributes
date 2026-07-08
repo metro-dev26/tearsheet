@@ -1,0 +1,5 @@
+# Source filings are the ground truth for byte-exact citations.
+# Never let git normalize their bytes (e.g. CRLF->LF line endings):
+# the grounding guard must see identical content on every machine,
+# or a claim grounded locally could be refused on the deploy host.
+data/filings/*.htm binary
