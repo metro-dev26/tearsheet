@@ -16,6 +16,8 @@ fooled the way a language model can. That's the whole point.
 This file should almost never change, even as the checks above it get smarter.
 """
 
+from parse_filing import normalize  # same punctuation-folding the parser uses
+
 
 def ground(clean_text: str, snippet: str):
     """Verify `snippet` appears verbatim in `clean_text`.
@@ -25,7 +27,14 @@ def ground(clean_text: str, snippet: str):
 
     Returns None if it doesn't — the claim is ungrounded and must be dropped.
     Refusing is a feature, not a failure.
+
+    We fold the proposer's snippet to the same plain-ASCII form the parser applied
+    to clean_text, so a curly-vs-straight quote can't cause a false refusal. This
+    is NOT loosening the guard — it's still an exact character match; both sides are
+    just compared in one canonical form. (clean_text is assumed already normalized,
+    which it is: it comes straight out of parse().)
     """
+    snippet = normalize(snippet)
     idx = clean_text.find(snippet)
     if idx == -1:
         return None

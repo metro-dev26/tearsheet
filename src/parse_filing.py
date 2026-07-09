@@ -37,6 +37,26 @@ warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 FILINGS_DIR = Path(__file__).resolve().parent.parent / "data" / "filings"
 PARSED_DIR = Path(__file__).resolve().parent.parent / "data" / "parsed"
 
+# Typographic normalization. Filings use "smart" punctuation (curly quotes, en/em
+# dashes, non-breaking spaces); an LLM quoting the filing back will type the plain
+# ASCII versions. The grounding guard does an EXACT character match, so unless both
+# sides are folded to the same form, a true claim gets falsely refused over a curly
+# apostrophe. Every mapping is ONE char -> ONE char, so text offsets never shift —
+# that's what lets us normalize without breaking the citation machinery.
+_NORMALIZE = str.maketrans({
+    "‘": "'", "’": "'",           # ‘ ’  curly single quotes / apostrophe
+    "“": '"', "”": '"',           # “ ”  curly double quotes
+    "–": "-", "—": "-", "−": "-",  # – — −  dashes / minus
+    " ": " ", " ": " ", " ": " ",  # non-breaking / thin / narrow spaces
+})
+
+
+def normalize(text: str) -> str:
+    """Fold smart punctuation to plain ASCII. Length-preserving (1 char -> 1 char),
+    so offsets computed on normalized text stay exact. Idempotent: normalizing
+    already-plain text is a no-op, so it's safe to apply anywhere."""
+    return text.translate(_NORMALIZE)
+
 
 def parse(html_path: Path):
     """Read one 10-K HTML file and return (clean_text, chunks).
@@ -66,7 +86,9 @@ def parse(html_path: Path):
     cursor = 0  # how many characters are in clean_text so far
 
     for piece in soup.stripped_strings:
-        text = " ".join(piece.split())  # collapse internal newlines/tabs/runs of spaces
+        # normalize() folds smart punctuation to ASCII (turning exotic spaces into
+        # regular ones); split()/join() then collapses all whitespace runs.
+        text = " ".join(normalize(piece).split())
         if not text:
             continue
 
