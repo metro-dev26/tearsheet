@@ -37,7 +37,7 @@ from pathlib import Path
 
 from ground import ground
 from parse_filing import parse
-from run_diligence import run_all_checks
+from llm_propose import propose
 
 GOLD_DIR = Path(__file__).resolve().parent.parent / "eval" / "gold"
 FILINGS_DIR = Path(__file__).resolve().parent.parent / "data" / "filings"
@@ -73,7 +73,13 @@ def eval_one(gold_path: Path) -> bool:
     print()
 
     clean_text, _chunks = parse(filing)
-    findings = dict(run_all_checks(clean_text))  # name -> finding-or-None
+    # Grade the REAL engine: the LLM proposer (reads for meaning), not the old
+    # Cirrus-tuned regex. propose() already returns {name -> finding|None} in the
+    # same shape the gold compares against, and grounds every quote through the
+    # guard. NOTE: this makes one live Gemini call per filing — the eval is now
+    # network-bound (temperature=0 keeps it near-deterministic; the model alias
+    # can drift). Pin the model / cache proposals if this becomes a fixed benchmark.
+    findings = propose(clean_text)  # name -> finding-or-None
 
     # ---- 1. EXTRACTION ACCURACY -------------------------------------------
     # Field-by-field against the gold values. Every mismatch is printed —

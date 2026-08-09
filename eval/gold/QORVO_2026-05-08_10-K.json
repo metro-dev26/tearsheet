@@ -1,0 +1,34 @@
+{
+  "_what_this_file_is": "The GOLD SET for Qorvo. The true answers keyed by a HUMAN (Tam) reading the document — NOT copied from the engine's proposal. The values below are intentionally left null: Tam must open the parsed filing, find each number with his own eyes, and type it in. Copying the proposer's output would make the eval circular and prove nothing — which is the exact thing this project exists to refuse.",
+  "_how_to_verify": "Open data/parsed/Qorvo,_2026-05-08_10-K.txt. For concentration: Ctrl+F 'largest end customer' — read the sentence, confirm the customer name and the MOST-RECENT-year percent yourself. For margin: Ctrl+F 'Gross margin for fiscal' — read the two years' figures yourself. Fill in every null below with what YOU read (not what the engine said). If your number and the engine's disagree, that disagreement is the point — trust your eyes. Then set verified_by_human to true and rerun the eval.",
+
+  "filing": "Qorvo,_2026-05-08_10-K.htm",
+  "verified_by_human": true,
+
+  "checks": {
+    "customer_concentration": {
+      "expected_present": true,
+      "fields": {
+        "customer": "Apple Inc.",
+        "pct": 50
+      }
+    },
+    "margin_trend": {
+      "expected_present": true,
+      "fields": {
+        "cur_pct": 45.9,
+        "prev_pct": 41.3,
+        "direction": "increased",
+        "concern": false
+      }
+    }
+  },
+
+  "_fabricated_claims_note": "Plausible-sounding claims that do NOT appear verbatim in the filing. The guard must refuse every one. Includes a PARAPHRASE of the real Apple disclosure — same meaning, reworded — because paraphrase is exactly how an LLM proposer fails. These are deliberately false, so writing them here is not keying truth.",
+  "fabricated_claims": [
+    "Apple, our largest end customer, made up 50 percent of total revenue in fiscal 2026",
+    "Samsung accounted for 50% of total revenue in fiscal years 2026 and 2025",
+    "Gross margin for fiscal 2026 was 38.5%, compared to 41.3% in fiscal 2025",
+    "the Company reported no material customer concentration in fiscal 2026"
+  ]
+}

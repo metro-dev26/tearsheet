@@ -5,4 +5,5 @@ __pycache__/
 data/filings/*
 !data/filings/CIRRUS_2026-05-21_10-K.htm
 !data/filings/SKYWORKS_2025-11-07_10-K.htm
+!data/filings/Qorvo,_2026-05-08_10-K.htm
 data/parsed/

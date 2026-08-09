@@ -33,6 +33,7 @@ Or a specific one:
 
 import json
 import sys
+import time
 from pathlib import Path
 
 import requests
@@ -57,6 +58,14 @@ _MODEL = "gemini-flash-latest"
 _ENDPOINT = f"https://generativelanguage.googleapis.com/v1beta/models/{_MODEL}:generateContent"
 
 _ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+
+# The free "flash" tier throws transient 429/503s under load ("high demand,
+# try again later") that have nothing to do with our request. Retry those a few
+# times with growing backoff so one spike doesn't abort an eval mid-run. A 4xx
+# that ISN'T rate-limiting (bad key, bad request) is a real error — fail on it
+# immediately, don't waste retries.
+_RETRY_STATUSES = {429, 500, 502, 503, 504}
+_MAX_ATTEMPTS = 4
 
 # How many percentage points of margin decline we treat as a concern. Mirror the
 # regex check so the LLM path and the old path grade a declining margin the same.
@@ -162,13 +171,19 @@ def _call_gemini(clean_text: str) -> dict:
             "temperature": 0,  # extraction, not creativity — be deterministic
         },
     }
-    resp = requests.post(
-        _ENDPOINT,
-        headers={"x-goog-api-key": _load_api_key()},  # key in header, never the URL
-        json=body,
-        timeout=120,
-    )
-    if resp.status_code != 200:
+    headers = {"x-goog-api-key": _load_api_key()}  # key in header, never the URL
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        resp = requests.post(_ENDPOINT, headers=headers, json=body, timeout=120)
+        if resp.status_code == 200:
+            break
+        # Transient overload/rate-limit: wait and retry (2s, 4s, 8s). Anything
+        # else (or the last attempt) is a hard failure we surface immediately.
+        if resp.status_code in _RETRY_STATUSES and attempt < _MAX_ATTEMPTS:
+            wait = 2 ** attempt
+            print(f"  Gemini {resp.status_code} (transient) — retrying in {wait}s "
+                  f"[attempt {attempt}/{_MAX_ATTEMPTS - 1}]", file=sys.stderr)
+            time.sleep(wait)
+            continue
         raise RuntimeError(f"Gemini API {resp.status_code}: {resp.text[:500]}")
 
     # The model's answer is a JSON string inside the response envelope.
