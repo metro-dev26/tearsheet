@@ -173,7 +173,23 @@ def _call_gemini(clean_text: str) -> dict:
     }
     headers = {"x-goog-api-key": _load_api_key()}  # key in header, never the URL
     for attempt in range(1, _MAX_ATTEMPTS + 1):
-        resp = requests.post(_ENDPOINT, headers=headers, json=body, timeout=120)
+        try:
+            resp = requests.post(_ENDPOINT, headers=headers, json=body, timeout=120)
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+            # A dropped socket or timeout THROWS instead of returning a status —
+            # so the status-code checks below never see it. WinError 10054
+            # (ConnectionResetError) surfaces here as requests' ConnectionError
+            # and once aborted an eval mid-run. It's the same transient class as a
+            # 503: back off and retry (2s, 4s, 8s), give up only on the last try.
+            if attempt < _MAX_ATTEMPTS:
+                wait = 2 ** attempt
+                print(f"  Gemini connection error ({type(exc).__name__}) — retrying "
+                      f"in {wait}s [attempt {attempt}/{_MAX_ATTEMPTS - 1}]", file=sys.stderr)
+                time.sleep(wait)
+                continue
+            raise RuntimeError(
+                f"Gemini connection failed after {_MAX_ATTEMPTS} attempts: {exc}"
+            ) from exc
         if resp.status_code == 200:
             break
         # Transient overload/rate-limit: wait and retry (2s, 4s, 8s). Anything
