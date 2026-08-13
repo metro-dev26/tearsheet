@@ -3,7 +3,7 @@
   "_how_to_verify": "Open data/parsed/SKYWORKS_2025-11-07_10-K.txt. Ctrl+F 'accounted for 67' for the Apple concentration sentence. Ctrl+F '41.2' for the gross margin table. Confirm every number below matches, correct anything wrong, then set verified_by_human to true.",
 
   "filing": "SKYWORKS_2025-11-07_10-K.htm",
-  "verified_by_human": false,
+  "verified_by_human": true,
 
   "checks": {
     "customer_concentration": {
