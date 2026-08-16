@@ -27,6 +27,7 @@ Run (Git Bash):
 """
 
 import html
+import json
 import sys
 from pathlib import Path
 
@@ -36,15 +37,36 @@ import streamlit as st
 # is importable no matter what the working directory is.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from ground import ground                       # noqa: E402  (import after path fix)
-from parse_filing import latest_filing, parse   # noqa: E402
-from run_diligence import run_all_checks        # noqa: E402
+from ground import ground                        # noqa: E402  (import after path fix)
+from parse_filing import FILINGS_DIR             # noqa: E402
+import engine                                     # noqa: E402
+
+GOLD_DIR = Path(__file__).resolve().parent.parent / "eval" / "gold"
 
 
-@st.cache_data(show_spinner="Parsing filing...")
-def load_filing(path_str: str):
-    clean_text, chunks = parse(Path(path_str))
-    return clean_text, len(chunks)
+@st.cache_data(show_spinner="Running diligence (cached)...")
+def load(path_str: str):
+    # The SAME engine the eval grades: parse + the LLM proposer behind the guard,
+    # cached to eval/cache/ so the live page makes no network call once warm. This
+    # is the fix for the demo previously running the dead Cirrus-tuned regex.
+    clean_text, n_chunks, findings = engine.run(Path(path_str))
+    return clean_text, n_chunks, findings
+
+
+@st.cache_data
+def gold_fakes_for(filing_name: str):
+    """The fabricated claims to test the guard against, pulled from THIS filing's
+    gold file (matched by its `filing` field, since Qorvo's filename and gold stem
+    differ). Returns [] if there's no gold — the caller falls back to generic fakes.
+    This kills the old Cirrus-hardcoded list that mislabeled other filings."""
+    for gp in GOLD_DIR.glob("*.json"):
+        try:
+            g = json.loads(gp.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            continue
+        if g.get("filing") == filing_name:
+            return g.get("fabricated_claims", [])
+    return []
 
 
 def esc(x) -> str:
@@ -63,7 +85,13 @@ def fig_bits(f: dict):
         return f'{f["pct"]}%', esc(f["customer"]), "share of net sales", "var(--ink-soft)"
     if f["check"] == "margin_trend":
         d = f["delta_pts"]
-        arrow, color = ("▲", "var(--ok)") if d >= 0 else ("▼", "var(--flag)")
+        # Flat (0.0 pt) is neither improvement nor decline — don't paint it green.
+        if d > 0:
+            arrow, color = "▲", "var(--ok)"
+        elif d < 0:
+            arrow, color = "▼", "var(--flag)"
+        else:
+            arrow, color = "→", "var(--muted)"
         return (f'{f["cur_pct"]}%', f'{arrow} {d:+.1f} pt YoY',
                 f'gross margin, {esc(f["direction"])}', color)
     return None
@@ -215,38 +243,62 @@ mark{background:#f0e2b0;color:var(--ink);padding:.05em .16em;}
 """
 st.markdown("<style>" + CSS + "</style>", unsafe_allow_html=True)
 
-# --- load the filing -------------------------------------------------------
-try:
-    filing_path = latest_filing()
-except FileNotFoundError as e:
-    st.error(f"No filing found: {e}")
+# --- pick the filing -------------------------------------------------------
+# A selector, so the demo can SHOW generality across companies instead of silently
+# defaulting to whichever filename sorts last (which used to serve Skyworks to the
+# Cirrus-only regex and render a wall of "No claim").
+filings = sorted(FILINGS_DIR.glob("*.htm"))
+if not filings:
+    st.error(f"No filings in {FILINGS_DIR}. Run fetch_filing.py first.")
     st.stop()
 
-clean_text, n_chunks = load_filing(str(filing_path))
+names = [f.name for f in filings]
+default_idx = next((i for i, n in enumerate(names) if n.upper().startswith("CIRRUS")), 0)
+choice = st.selectbox("Filing", names, index=default_idx)
+filing_path = FILINGS_DIR / choice
 
-# Run the whole engine ONCE; the key figures and the sections read one result.
-results = list(run_all_checks(clean_text))
+# The SAME engine the eval grades (parse + LLM proposer + guard), cached to disk.
+# A filing with no cache needs a live model call, which can fail (e.g. free-tier
+# quota). Fail with a message, not a stack trace — the demo must never explode.
+try:
+    clean_text, n_chunks, findings = load(str(filing_path))
+except Exception as exc:  # noqa: BLE001 — surface any engine/network failure cleanly
+    st.error(
+        f"Couldn't run diligence on {choice}: {exc}\n\n"
+        "This filing likely isn't cached yet and the live model call failed. "
+        "Pick a cached filing, or rebuild the cache with:  "
+        "python src/run_eval.py --refresh"
+    )
+    st.stop()
+results = list(findings.items())
 n_grounded = sum(1 for _, f in results if f is not None)
 
-# Fabricated claims the guard must refuse. These MIRROR eval/gold/*.json — the
-# same set the automated eval grades against — including a paraphrase of the REAL
-# disclosure (para=True): right in meaning, not verbatim. The guard refuses it
-# anyway, because meaning is not proof.
-FABRICATED = [
-    ("we had one end customer, Samsung, representing 45 percent of net sales",
-     "Wrong customer, wrong number — pure invention.", False),
-    ("our largest customer, Apple Inc., accounted for 91% of our revenue",
-     "A paraphrase of the real disclosure: right in meaning, not verbatim.", True),
-    ("gross margin of 48.2 percent for fiscal year 2026 decreased from fiscal "
-     "year 2025 gross margin of 52.5 percent",
-     "Right shape, fabricated numbers.", False),
-    ("the Company is substantially dependent on a single customer for the "
-     "majority of its sales",
-     "True in spirit, absent from the text as written.", False),
-]
-refusals = [(snip, why, para, ground(clean_text, snip) is None)
-            for snip, why, para in FABRICATED]
+# --- fabricated claims the guard must refuse --------------------------------
+# Pulled from THIS filing's own gold file (never another company's claims), plus a
+# paraphrase built LIVE from the real concentration finding — right in meaning,
+# different in words — which the guard must still refuse. Generic, filing-agnostic
+# fakes are the fallback when a filing has no gold yet.
+fake_items = []  # (claim_text, is_paraphrase)
+_gold_fakes = gold_fakes_for(filing_path.name)
+if _gold_fakes:
+    fake_items += [(s, False) for s in _gold_fakes]
+else:
+    fake_items += [
+        ("the Company reported no material customer concentration risk", False),
+        ("gross margin collapsed to 5.0 percent this fiscal year", False),
+    ]
+
+_conc = findings.get("customer_concentration")
+if _conc is not None:
+    _para = (f"our largest customer, {_conc.get('customer')}, accounted for "
+             f"{_conc.get('pct')}% of the company's revenue")
+    # Only count it as a fake if it genuinely is NOT verbatim in the filing.
+    if ground(clean_text, _para) is None:
+        fake_items.append((_para, True))
+
+refusals = [(snip, para, ground(clean_text, snip) is None) for snip, para in fake_items]
 n_refused = sum(1 for *_, refused in refusals if refused)
+n_fakes = len(fake_items)
 
 # --- filing identity, derived from the filename (stays company-agnostic) ---
 parts = filing_path.stem.split("_")
@@ -277,7 +329,7 @@ st.markdown(
 figs = [
     (str(len(results)), "Checks run", ""),
     (str(n_grounded), "Grounded findings", "ok"),
-    (f"{n_refused}/{len(FABRICATED)}", "Fabricated claims refused", "ok"),
+    (f"{n_refused}/{n_fakes}", "Fabricated claims refused", "ok"),
     (f"{len(clean_text) // 1000}K", "Chars parsed", ""),
 ]
 kf = "".join(
@@ -299,11 +351,11 @@ st.markdown(
 
 # --- the grounding guard: the hero of the product --------------------------
 refuse_items = ""
-for snip, why, para, refused in refusals:
+for snip, para, refused in refusals:
     tag = '<span class="ts-para">paraphrase of the real finding</span>' if para else ""
     if refused:
-        verdict = (f'<div class="ts-refuse-verdict"><span class="x">✕</span>'
-                   f'Refused — dropped. <span class="why">{esc(why)}</span></div>')
+        verdict = ('<div class="ts-refuse-verdict"><span class="x">✕</span>'
+                   'Refused — not found verbatim, so dropped.</div>')
     else:
         # Should be impossible. If it happens, say so loudly, don't hide it.
         verdict = ('<div class="ts-refuse-verdict bug"><span class="x">!</span>'
@@ -318,10 +370,10 @@ st.markdown(
     '<p class="ts-note">Language models hallucinate plausible-sounding financial '
     'facts. Tearsheet\'s guard is <b>deterministic on purpose</b>: a claim '
     'survives only if its exact words physically exist in the filing. Below are '
-    'four fabricated disclosures — including a paraphrase of the genuine finding — '
-    'each one refused.</p>'
+    'fabricated disclosures — including a paraphrase of this filing\'s genuine '
+    'finding — each one refused.</p>'
     f'<ol class="ts-refuse-list">{refuse_items}</ol>'
-    f'<p class="ts-refuse-sum"><b>{n_refused} of {len(FABRICATED)} fabricated '
+    f'<p class="ts-refuse-sum"><b>{n_refused} of {n_fakes} fabricated '
     'claims refused.</b> Refusing is the point: “I can’t prove it, so I won’t '
     'say it.”</p>',
     unsafe_allow_html=True,
@@ -330,9 +382,10 @@ st.markdown(
 # --- colophon --------------------------------------------------------------
 st.markdown(
     '<div class="ts-colophon">Prepared by <b>Tearsheet</b> · Python · Streamlit · '
-    'BeautifulSoup over SEC EDGAR filings. The proposer is deterministic regex; '
-    'the grounding guard is what makes every citation trustworthy. v1 — one '
-    'company, two checks, one honest metric. &nbsp;·&nbsp; '
+    'BeautifulSoup over SEC EDGAR filings. An LLM proposes claims by reading for '
+    'meaning; the deterministic grounding guard verifies every quote — and every '
+    'number inside it — against the source, and drops anything it can\'t prove. '
+    '&nbsp;·&nbsp; '
     '<a href="https://github.com/metro-dev26/tearsheet" target="_blank">'
     'Source on GitHub →</a></div>',
     unsafe_allow_html=True,

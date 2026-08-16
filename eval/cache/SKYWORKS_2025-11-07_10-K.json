@@ -1,0 +1,29 @@
+{
+  "model": "gemini-flash-latest",
+  "filing": "SKYWORKS_2025-11-07_10-K.htm",
+  "findings": {
+    "customer_concentration": {
+      "check": "customer_concentration",
+      "claim": "Customer concentration risk: a single customer (Apple) accounted for approximately 67.0% of total net sales.",
+      "customer": "Apple",
+      "pct": 67.0,
+      "snippet": "During fiscal 2025, fiscal 2024, and fiscal 2023, Apple, through sales to multiple distributors, contract manufacturers, and direct sales for multiple applications including smartphones, tablets, desktop, and notebook computers, watches and other devices, in the aggregate accounted for 67 %, 69 %, and 66 % of the Company's net revenue, respectively.",
+      "char_start": 282812,
+      "char_end": 283163,
+      "occurrences": 1
+    },
+    "margin_trend": {
+      "check": "margin_trend",
+      "claim": "Gross margin trend: 44.2% -> 41.2%, a -3.0 pt move (decreased).",
+      "cur_pct": 41.2,
+      "prev_pct": 44.2,
+      "delta_pts": -3.0,
+      "direction": "decreased",
+      "concern": true,
+      "snippet": "% of net revenue 41.2 % 41.2 % 44.2 %",
+      "char_start": 178698,
+      "char_end": 178735,
+      "occurrences": 1
+    }
+  }
+}

@@ -32,6 +32,7 @@ Or a specific one:
 """
 
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -169,18 +170,29 @@ def _call_gemini(clean_text: str) -> dict:
             "responseMimeType": "application/json",
             "responseSchema": _SCHEMA,
             "temperature": 0,  # extraction, not creativity — be deterministic
+            # Our answer is two small objects; 2048 tokens is ample. Setting it
+            # explicitly (instead of trusting the default) makes a truncated output
+            # a bug we control, not a silent surprise.
+            "maxOutputTokens": 2048,
         },
     }
     headers = {"x-goog-api-key": _load_api_key()}  # key in header, never the URL
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
             resp = requests.post(_ENDPOINT, headers=headers, json=body, timeout=120)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+        except (
+            requests.exceptions.ConnectionError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ChunkedEncodingError,
+        ) as exc:
             # A dropped socket or timeout THROWS instead of returning a status —
-            # so the status-code checks below never see it. WinError 10054
-            # (ConnectionResetError) surfaces here as requests' ConnectionError
-            # and once aborted an eval mid-run. It's the same transient class as a
-            # 503: back off and retry (2s, 4s, 8s), give up only on the last try.
+            # so the status-code checks below never see it. WHICH exception depends
+            # on WHEN the socket dies: a reset during connect/send is a
+            # ConnectionError, but one during the response READ (WinError 10054
+            # "mid-flight") comes back as ChunkedEncodingError — a different class,
+            # NOT a ConnectionError subclass, so it must be listed explicitly or the
+            # original crash slips through. All three are the same transient class as
+            # a 503: back off and retry (2s, 4s, 8s), give up only on the last try.
             if attempt < _MAX_ATTEMPTS:
                 wait = 2 ** attempt
                 print(f"  Gemini connection error ({type(exc).__name__}) — retrying "
@@ -202,9 +214,51 @@ def _call_gemini(clean_text: str) -> dict:
             continue
         raise RuntimeError(f"Gemini API {resp.status_code}: {resp.text[:500]}")
 
-    # The model's answer is a JSON string inside the response envelope.
-    text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-    return json.loads(text)
+    # The model's answer is a JSON string inside the response envelope — BUT a
+    # 200 doesn't guarantee that shape. If Gemini blocks on safety, hits its token
+    # cap, or otherwise returns no usable candidate, "candidates"/"parts" are
+    # missing and the naive index chain throws a cryptic KeyError/IndexError that
+    # kills the whole eval. Catch that and fail with a message that says what
+    # actually happened. We do NOT retry: an empty 200 is a decision by the model
+    # (e.g. a safety block), not a transient blip a retry would clear.
+    envelope = resp.json()
+    try:
+        candidate = envelope["candidates"][0]
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(
+            "Gemini returned 200 but no candidate "
+            f"(likely a top-level safety block). Response: {json.dumps(envelope)[:500]}"
+        ) from exc
+
+    # A candidate can EXIST but be unusable: cut off at the token cap (MAX_TOKENS)
+    # or filtered (SAFETY/RECITATION). Its JSON is then partial and json.loads would
+    # throw a cryptic error that kills the whole eval. Inspect finishReason first and
+    # fail with a message that says what actually happened. Not retried — a block or
+    # a cap isn't a transient blip a retry clears.
+    finish = candidate.get("finishReason")
+    if finish not in (None, "STOP"):
+        raise RuntimeError(
+            f"Gemini stopped early (finishReason={finish!r}) — output is unusable "
+            f"(safety block or token cap). Response: {json.dumps(envelope)[:500]}"
+        )
+
+    try:
+        text = candidate["content"]["parts"][0]["text"]
+    except (KeyError, IndexError) as exc:
+        raise RuntimeError(
+            "Gemini returned a candidate with no text part. "
+            f"Response: {json.dumps(envelope)[:500]}"
+        ) from exc
+
+    # Even with finishReason=STOP, guard the parse: malformed JSON should surface as
+    # a clear error, never a raw traceback mid-eval.
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"Gemini returned non-JSON despite the JSON schema: {exc}. "
+            f"First 500 chars: {text[:500]}"
+        ) from exc
 
 
 def propose(clean_text: str) -> dict:
@@ -221,6 +275,35 @@ def propose(clean_text: str) -> dict:
     }
 
 
+def _number_in(snippet: str, value) -> bool:
+    """Does `value` (a number the model claimed) actually appear in `snippet`?
+
+    WHY THIS EXISTS — the gap the guard alone doesn't close:
+    ground() proves the QUOTE is real. It does NOT prove the quote SUPPORTS the
+    number attached to it. The model hands us the figure (pct / cur_pct / prev_pct)
+    and the quote as SEPARATE fields; nothing forces them to agree. So a rounded,
+    transposed, or hallucinated number paired with a real-but-unrelated quote would
+    sail through with a citation that looks legitimate but doesn't say the number.
+    "Every number traced to the exact line" has to mean the line actually CONTAINS
+    the number. This check enforces exactly that, deterministically — same spirit as
+    the guard: if we can't prove it, we drop it.
+
+    We compare against the number's canonical text form (f"{n:g}" -> "91", "41.2")
+    and require DIGIT BOUNDARIES on both sides, so "50" can't spuriously satisfy a
+    claim by matching inside "150" or "50.7" — that would be a different number.
+    """
+    if value is None:
+        return False
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return False
+    token = f"{n:g}"  # 91.0 -> "91", 41.2 -> "41.2" (drops noise, keeps real decimals)
+    # Not flanked by another digit or a decimal point == it's this number, standalone.
+    pattern = r"(?<![\d.])" + re.escape(token) + r"(?![\d.])"
+    return re.search(pattern, snippet) is not None
+
+
 def _ground_concentration(clean_text: str, prop: dict):
     """Turn the model's concentration proposal into a grounded finding, or None."""
     if not prop.get("present") or not prop.get("snippet"):
@@ -232,6 +315,12 @@ def _ground_concentration(clean_text: str, prop: dict):
     # The guard has the final say: quote must exist in the filing, verbatim.
     cite = ground(clean_text, prop["snippet"])
     if cite is None:
+        return None
+
+    # Second gate: the claimed percentage must actually appear in the grounded
+    # quote. A concentration claim with no verifiable number in its own citation
+    # is not a finding we can stand behind — drop it.
+    if not _number_in(cite["snippet"], pct):
         return None
 
     claim = (
@@ -267,6 +356,14 @@ def _ground_margin(clean_text: str, prop: dict):
 
     cite = ground(clean_text, prop["snippet"])
     if cite is None:
+        return None
+
+    # Second gate: BOTH margins we're about to compare must appear in the grounded
+    # quote. If the model quoted a run that contains only one of the two figures
+    # (common when a margin lives in a multi-column table and it grabbed one cell),
+    # the trend claim isn't traceable to its own citation — drop it rather than show
+    # a delta whose halves aren't both in the proof.
+    if not (_number_in(cite["snippet"], cur) and _number_in(cite["snippet"], prev)):
         return None
 
     delta = round(cur - prev, 2)  # positive = margin improved

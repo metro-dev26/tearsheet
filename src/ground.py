@@ -22,8 +22,10 @@ from parse_filing import normalize  # same punctuation-folding the parser uses
 def ground(clean_text: str, snippet: str):
     """Verify `snippet` appears verbatim in `clean_text`.
 
-    Returns {snippet, char_start, char_end} if it does — a citation you can
-    trust, because clean_text[char_start:char_end] == snippet exactly.
+    Returns {snippet, char_start, char_end, occurrences} if it does — a citation
+    you can trust, because clean_text[char_start:char_end] == snippet exactly.
+    `occurrences` is how many times the snippet appears; >1 means the citation is
+    ambiguous (we cite the first) and a caller may choose to flag it.
 
     Returns None if it doesn't — the claim is ungrounded and must be dropped.
     Refusing is a feature, not a failure.
@@ -34,7 +36,19 @@ def ground(clean_text: str, snippet: str):
     just compared in one canonical form. (clean_text is assumed already normalized,
     which it is: it comes straight out of parse().)
     """
-    snippet = normalize(snippet)
+    # Fold punctuation AND collapse whitespace to the exact same canonical form the
+    # parser applied to clean_text (`" ".join(normalize(piece).split())`). The parser
+    # squeezes every run of whitespace to a single space — including across table
+    # cells and line breaks — so a model that quotes a margin out of a multi-cell
+    # table (newlines, double spaces) would be falsely refused unless we squeeze its
+    # snippet the same way. This is NOT loosening the guard: it's still an exact match
+    # on the visible characters, just whitespace-insensitive, both sides canonicalized.
+    snippet = " ".join(normalize(snippet).split())
+    if not snippet:
+        # An all-whitespace/empty snippet would "match" at position 0 trivially.
+        # There is nothing to ground — refuse.
+        return None
+
     idx = clean_text.find(snippet)
     if idx == -1:
         return None
@@ -42,8 +56,23 @@ def ground(clean_text: str, snippet: str):
     start = idx
     end = idx + len(snippet)
 
-    # Paranoia: prove the offsets we're about to hand out are exact. If this
-    # ever fails, something is deeply wrong and we do NOT want to emit a citation.
-    assert clean_text[start:end] == snippet
+    # Paranoia: prove the offsets we're about to hand out are exact. Use a real
+    # raise, NOT assert — assert is compiled out under `python -O`, and the moat's
+    # final integrity check must never be optional.
+    if clean_text[start:end] != snippet:
+        raise AssertionError(
+            f"ground(): offset invariant broken — clean_text[{start}:{end}] != snippet"
+        )
 
-    return {"snippet": snippet, "char_start": start, "char_end": end}
+    # How many times the snippet appears. find() returns the FIRST, which for a
+    # short/duplicated quote may not be the instance the proposer read. We can't
+    # know which was meant, so we don't pretend: we cite the first AND report the
+    # count, so a caller can flag an ambiguous citation instead of trusting it blind.
+    occurrences = clean_text.count(snippet)
+
+    return {
+        "snippet": snippet,
+        "char_start": start,
+        "char_end": end,
+        "occurrences": occurrences,
+    }

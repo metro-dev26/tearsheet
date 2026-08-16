@@ -1,5 +1,5 @@
 {
-  "_what_this_file_is": "The GOLD SET for Skyworks. NOT YET human-verified — these values came from an automated text search (grep), which is the SAME kind of extraction the engine itself does. Per the project's anti-circularity rule, this file must NOT be trusted until a human opens data/parsed/SKYWORKS_2025-11-07_10-K.txt and confirms every value below with their own eyes.",
+  "_what_this_file_is": "The GOLD SET for Skyworks. HUMAN-VERIFIED: a human opened data/parsed/SKYWORKS_2025-11-07_10-K.txt and confirmed every value below (Apple 67%, gross margin 41.2% most-recent vs 44.2% earliest-disclosed, declining, concern) against the filing with their own eyes. verified_by_human is true.",
   "_how_to_verify": "Open data/parsed/SKYWORKS_2025-11-07_10-K.txt. Ctrl+F 'accounted for 67' for the Apple concentration sentence. Ctrl+F '41.2' for the gross margin table. Confirm every number below matches, correct anything wrong, then set verified_by_human to true.",
 
   "filing": "SKYWORKS_2025-11-07_10-K.htm",
@@ -19,9 +19,10 @@
       "fields": {
         "cur_pct": 41.2,
         "prev_pct": 44.2,
-        "direction": "decreased"
+        "direction": "decreased",
+        "concern": true
       },
-      "_note": "Filing reports gross margin as a TABLE (fiscal 2025/2024/2023 side by side: 41.2% / 41.2% / 44.2%), not a prose YoY sentence like Cirrus's ('gross margin of X percent for fiscal year Y increased from...'). Our regex only matches the prose pattern, so it's expected to miss this too. Exact year-pairing NOT yet confirmed by a human — verify before trusting."
+      "_note": "Filing reports gross margin as a TABLE (fiscal 2025/2024/2023 side by side: 41.2% / 41.2% / 44.2%), not a prose YoY sentence like Cirrus's. Year-pairing (41.2 most-recent vs 44.2 earliest-disclosed) confirmed by a human against the filing."
     }
   },
 

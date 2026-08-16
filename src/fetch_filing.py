@@ -13,6 +13,7 @@ real-world API manners detail, not optional.
 """
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -38,7 +39,9 @@ def cik_for_ticker(ticker: str) -> int:
     """Look up a company's CIK from its ticker. Never hardcode the CIK —
     look it up, so the tool works for any company later."""
     url = "https://www.sec.gov/files/company_tickers.json"
-    data = requests.get(url, headers=HEADERS, timeout=30).json()
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()  # EDGAR throttling returns an HTML error page; fail clearly, not on .json()
+    data = resp.json()
     ticker = ticker.upper()
     for row in data.values():
         if row["ticker"] == ticker:
@@ -50,7 +53,9 @@ def latest_10k(cik: int) -> dict:
     """Return metadata for the company's most recent 10-K."""
     # CIK must be zero-padded to 10 digits for this endpoint.
     url = f"https://data.sec.gov/submissions/CIK{cik:010d}.json"
-    sub = requests.get(url, headers=HEADERS, timeout=30).json()
+    resp = requests.get(url, headers=HEADERS, timeout=30)
+    resp.raise_for_status()
+    sub = resp.json()
 
     # filings.recent is column-oriented: parallel arrays, one index per filing.
     recent = sub["filings"]["recent"]
@@ -78,7 +83,10 @@ def download(meta: dict) -> Path:
     resp.raise_for_status()
 
     FILINGS_DIR.mkdir(parents=True, exist_ok=True)
-    out = FILINGS_DIR / f"{meta['company'].split()[0]}_{meta['filing_date']}_10-K.htm"
+    # Sanitize the company token for the filename: "Qorvo, Inc." -> "Qorvo", not the
+    # comma-bearing "Qorvo," that then leaks into every downstream path and glob.
+    company_token = re.sub(r"[^A-Za-z0-9]", "", meta["company"].split()[0]) or "filing"
+    out = FILINGS_DIR / f"{company_token}_{meta['filing_date']}_10-K.htm"
     out.write_text(resp.text, encoding="utf-8")
     return out
 

@@ -66,12 +66,34 @@ def parse(html_path: Path):
                  piece of visible text, and its offsets point into clean_text so
                  that clean_text[char_start:char_end] == text, exactly.
     """
-    html = html_path.read_text(encoding="utf-8")
+    # Most EDGAR filings are UTF-8, but some (older, or foreign 20-F filers) are
+    # cp1252/latin-1. Hard-coding UTF-8 crashes on those. Try UTF-8 first, then fall
+    # back to cp1252 (a superset of latin-1 that decodes any byte), so ingestion
+    # never dies on an encoding it could have read.
+    raw = html_path.read_bytes()
+    try:
+        html = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        html = raw.decode("cp1252", errors="replace")
+
     soup = BeautifulSoup(html, "lxml")
 
     # 10-Ks carry invisible junk: scripts, styling, and XBRL metadata in <head>.
     # None of it is disclosure prose. Remove it so it can never pollute our text.
     for tag in soup(["script", "style", "head"]):
+        tag.decompose()
+
+    # Also drop text a human reading the RENDERED filing would never see: elements
+    # explicitly hidden by inline style or the `hidden` attribute. Otherwise a
+    # "grounded" citation could quote invisible text — technically present in the
+    # HTML, but not part of the disclosure anyone actually reads. (Heuristic: inline
+    # style only. Class-based CSS isn't resolved here — acceptable; EDGAR filings
+    # hide via inline style in practice.)
+    for tag in soup.find_all(style=True):
+        style = tag["style"].replace(" ", "").lower()
+        if "display:none" in style or "visibility:hidden" in style:
+            tag.decompose()
+    for tag in soup.find_all(hidden=True):
         tag.decompose()
 
     # Walk every visible piece of text in document order.
@@ -106,6 +128,12 @@ def parse(html_path: Path):
         cursor += 1
 
     clean_text = "".join(parts)
+
+    # Enforce the citation invariant on EVERY parse, not just when this file is run
+    # as a script. Callers (app, eval, proposer) rely on clean_text[start:end]==text;
+    # if a parser/lib change ever breaks that, fail HERE, loudly, instead of silently
+    # emitting citations that point at the wrong characters. O(n) over chunks — cheap.
+    verify_offsets(clean_text, chunks)
     return clean_text, chunks
 
 

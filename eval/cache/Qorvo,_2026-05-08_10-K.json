@@ -1,0 +1,29 @@
+{
+  "model": "gemini-flash-latest",
+  "filing": "Qorvo,_2026-05-08_10-K.htm",
+  "findings": {
+    "customer_concentration": {
+      "check": "customer_concentration",
+      "claim": "Customer concentration risk: a single customer (Apple Inc.) accounted for approximately 50.0% of total net sales.",
+      "customer": "Apple Inc.",
+      "pct": 50.0,
+      "snippet": "We provide products to our largest end customer, Apple Inc. (\"Apple\"), through sales to multiple contract manufacturers, which in the aggregate accounted for 50% and 47% of total revenue in fiscal years 2026 and 2025, respectively.",
+      "char_start": 32365,
+      "char_end": 32596,
+      "occurrences": 1
+    },
+    "margin_trend": {
+      "check": "margin_trend",
+      "claim": "Gross margin trend: 41.3% -> 45.9%, a +4.6 pt move (increased).",
+      "cur_pct": 45.9,
+      "prev_pct": 41.3,
+      "delta_pts": 4.6,
+      "direction": "increased",
+      "concern": false,
+      "snippet": "Gross margin for fiscal 2026 was 45.9%, compared to 41.3% in fiscal 2025",
+      "char_start": 167779,
+      "char_end": 167851,
+      "occurrences": 1
+    }
+  }
+}

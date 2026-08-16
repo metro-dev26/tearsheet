@@ -1,0 +1,29 @@
+{
+  "model": "gemini-flash-latest",
+  "filing": "CIRRUS_2026-05-21_10-K.htm",
+  "findings": {
+    "customer_concentration": {
+      "check": "customer_concentration",
+      "claim": "Customer concentration risk: a single customer (Apple Inc.) accounted for approximately 91% of total net sales.",
+      "customer": "Apple Inc.",
+      "pct": 91,
+      "snippet": "For fiscal years 2026, 2025, and 2024, we had one end customer, Apple Inc., who purchased through multiple contract manufacturers and represented approximately 91 percent, 89 percent, and 87 percent, of the Company's total net sales, respectively.",
+      "char_start": 16525,
+      "char_end": 16772,
+      "occurrences": 2
+    },
+    "margin_trend": {
+      "check": "margin_trend",
+      "claim": "Gross margin trend: 52.5% -> 52.8%, a +0.3 pt move (increased).",
+      "cur_pct": 52.8,
+      "prev_pct": 52.5,
+      "delta_pts": 0.3,
+      "direction": "increased",
+      "concern": false,
+      "snippet": "Overall gross margin of 52.8 percent for fiscal year 2026 increased from fiscal year 2025 gross margin of 52.5 percent.",
+      "char_start": 156065,
+      "char_end": 156184,
+      "occurrences": 1
+    }
+  }
+}
