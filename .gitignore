@@ -7,3 +7,6 @@ data/filings/*
 !data/filings/SKYWORKS_2025-11-07_10-K.htm
 !data/filings/Qorvo,_2026-05-08_10-K.htm
 data/parsed/
+
+# FinanceBench dataset — do not redistribute (CC-BY-NC-4.0)
+eval/financebench/*.jsonl
