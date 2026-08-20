@@ -2,9 +2,7 @@
 
 *Automated first-pass diligence on a company's SEC filings — every red flag traced to the exact line it came from.*
 
-**[▶ Live demo](https://YOUR-APP.streamlit.app)**  ·  built with Python + Streamlit over live SEC EDGAR filings
-
-![Tearsheet screenshot](docs/screenshot.png)
+**[▶ Live demo](https://tearsheet-nahz3mqdgezudjgvnzksn6.streamlit.app/)**  ·  built with Python + Streamlit over live SEC EDGAR filings
 
 ---
 
@@ -37,15 +35,19 @@ The architecture separates *proposing* a claim from *verifying* it:
 
 ```
 parse_filing.py   raw 10-K HTML  ->  clean_text (+ verified char offsets)
-checks.py         propose:  a check finds a candidate claim + the snippet it rests on
-ground.py         verify:   the snippet must appear verbatim in clean_text, or -> refused
+llm_propose.py    propose:  an LLM (Gemini) reads clean_text and proposes each
+                            claim, a verbatim quote, and the numbers behind it
+ground.py         verify:   the quote must appear verbatim in clean_text, AND the
+                            claimed number must appear in that quote, or -> refused
 ```
 
 `ground.py` is the moat. It is deliberately dumb and deterministic — it trusts
 nobody, does an exact string match, and returns the character span or nothing.
-Because the guard catches ungrounded claims after the fact, the *proposer* is
-free to be swapped for a cheaper or smarter model later without weakening the
-reliability guarantee.
+This is exactly what lets the proposer be a cheap, fallible model safely: the LLM
+reads for *meaning* (so it generalizes to filings that word the same fact
+differently — where a hand-tuned regex finds nothing), and the guard
+deterministically drops anything it can't prove, including a real quote paired
+with a number that isn't in it.
 
 ## The two v1 checks (on Cirrus Logic, CRUS)
 
@@ -124,15 +126,21 @@ python src/run_eval.py
 ## Tech
 
 Python 3.13 · Streamlit · BeautifulSoup/lxml for parsing · SEC EDGAR as the
-data source. No LLM in the loop yet — the proposer is deterministic regex, which
-keeps the engine auditable while the grounding seam proves out. An LLM proposer
-behind the same guard is the next step.
+data source · Google Gemini (`gemini-flash-latest`) as the proposer. The LLM
+reads the filing and proposes; the deterministic guard verifies every quote and
+number. A free, fallible model is safe here *precisely because* the guard catches
+its mistakes — and proposals are cached (`eval/cache/`) so the demo and eval run
+offline and reproducibly, with no API key or quota risk.
 
 ## Scope & limitations
 
-This is a scoped, working slice — not a product. v1 covers **one company, two
-checks, one honest metric.** The proposer is regex, not an LLM, so it only
-recognizes disclosure phrasings it was written for; generalizing to arbitrary
-filers is deliberately deferred. The roadmap (see `ROADMAP.md`) covers a
-going-concern check, unicode/whitespace normalization to harden grounding, XBRL
-via `edgartools`, and swapping in an LLM proposer behind the existing guard.
+This is a scoped, working slice — not a product. It covers **two checks (customer
+concentration, gross-margin trend) and one honest metric**, proven on three
+companies hand-keyed cold (Cirrus, Skyworks, Qorvo) plus the external FinanceBench
+run above. Real limits remain: the parser flattens tables to text, so a figure
+that lives only in complex table structure can be missed; the model is pinned by
+an *alias* (`gemini-flash-latest`) that can drift version-to-version — cached
+proposals fix a given run, but the alias isn't hard-pinned yet; and coverage is
+two checks, not a full diligence suite. The roadmap (see `ROADMAP.md`) covers more
+checks, table-structure-aware parsing, and scaling to a ~20-filer "Apple
+Dependency Index."
