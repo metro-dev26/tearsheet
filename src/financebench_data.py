@@ -30,7 +30,7 @@ LOCAL_PATH = (
     Path(__file__).resolve().parent.parent
     / "eval" / "financebench" / "financebench_open_source.jsonl"
 )
-HEADERS = {"User-Agent": "tearsheet-eval Tam sujanss122@gmail.com"}
+HEADERS = {"User-Agent": "tearsheet-eval claudeisgoat1@gmail.com"}
 
 _NUM_RE = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
 

@@ -29,7 +29,7 @@ except Exception:
 import requests
 
 # SEC wants a descriptive, contactable User-Agent.
-HEADERS = {"User-Agent": "diligence-engine Tam sujanss122@gmail.com"}
+HEADERS = {"User-Agent": "tearsheet diligence-engine claudeisgoat1@gmail.com"}
 
 # Where downloaded filings land.
 FILINGS_DIR = Path(__file__).resolve().parent.parent / "data" / "filings"
