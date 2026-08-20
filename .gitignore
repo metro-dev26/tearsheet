@@ -10,3 +10,6 @@ data/parsed/
 
 # FinanceBench dataset — do not redistribute (CC-BY-NC-4.0)
 eval/financebench/*.jsonl
+
+# Private project notes for Claude — local only, never public
+CLAUDE.md
