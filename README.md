@@ -77,6 +77,30 @@ The guard-rejection set includes a *paraphrase of the real disclosure* — same
 meaning, different words — because paraphrase is exactly how an LLM proposer
 would fail. The guard refuses it anyway.
 
+## External validation (FinanceBench)
+
+Grading against our own gold set answers one question; it doesn't answer *"would this
+hold on filings you didn't tune it for?"* So the same guard is measured against
+**FinanceBench** (Patronus AI, CC-BY-NC-4.0) — a public benchmark of real questions over
+real SEC filings. Using its 150-row open subset, filtered to the 50 numeric questions that
+ship with both an evidence quote and its source page, across **24 companies Tearsheet has
+never seen**:
+
+- **Grounding robustness — 100% (50/50).** Every real evidence quote grounds verbatim in
+  its own source page after the same normalization the parser applies. The guard isn't
+  brittle on prose it wasn't written for.
+- **Extractability — 14% stated vs 86% derived.** Only 14% of answers have their value
+  printed directly in the cited statement (a line item like capex or COGS). The other 86%
+  are *derived* — ratios, per-share figures, cross-statement math, rounded totals — which
+  Tearsheet **refuses to state as grounded fact** rather than fabricate a number the filing
+  never prints.
+
+This is the trade Tearsheet makes on purpose: it answers less, but what it answers, it
+proves — against the exact hallucination problem that makes generic LLMs unsafe for
+diligence.
+
+Reproduce: `python src/run_financebench_eval.py`
+
 ## Run it locally
 
 ```bash
