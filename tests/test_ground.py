@@ -91,6 +91,16 @@ check("substring inside a bigger number is NOT a match", _number_in("revenue of 
 check("different decimal is NOT a match", _number_in("margin of 41.25%", 41.2), False)
 check("None value is False", _number_in("anything at all", None), False)
 
+# Finding (FinanceBench harness, 2026-08-20): _number_in was BLIND to digit-grouping
+# commas and trailing zeros. It searched for the STRING "1577" and missed "1,577";
+# searched "8.7" and missed "8.70". Both are the SAME number, so this was a false
+# refusal in production (fails safe — a miss, never a hallucination — but a real
+# coverage bug). Fixed by comparing numeric VALUES, not digit strings.
+check("comma-grouped number present (1,577 == 1577)", _number_in("capital expenditure of 1,577", 1577), True)
+check("trailing-zero number present (8.70 == 8.7)", _number_in("earnings per share of 8.70", 8.7), True)
+check("millions with commas present (1,500,000)", _number_in("net revenue of 1,500,000", 1500000), True)
+check("value NOT matched inside a comma-grouped number (999 != 1,999)", _number_in("1,999 units shipped", 999), False)
+
 
 # --- 3. the fix in action: mismatched number gets dropped --------------------
 # This is the regression guard for finding #1 — the crack in the moat. A real,

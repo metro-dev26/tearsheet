@@ -275,6 +275,11 @@ def propose(clean_text: str) -> dict:
     }
 
 
+# One number token: an optional sign, then digits that may carry grouping commas,
+# then an optional decimal part. "1,577" and "8.70" and "-0.02" are each ONE token.
+_NUMBER_TOKEN = re.compile(r"-?\d[\d,]*(?:\.\d+)?")
+
+
 def _number_in(snippet: str, value) -> bool:
     """Does `value` (a number the model claimed) actually appear in `snippet`?
 
@@ -288,9 +293,15 @@ def _number_in(snippet: str, value) -> bool:
     the number. This check enforces exactly that, deterministically — same spirit as
     the guard: if we can't prove it, we drop it.
 
-    We compare against the number's canonical text form (f"{n:g}" -> "91", "41.2")
-    and require DIGIT BOUNDARIES on both sides, so "50" can't spuriously satisfy a
-    claim by matching inside "150" or "50.7" — that would be a different number.
+    We compare NUMERIC VALUES, not digit strings. The old version searched for the
+    string form (f"{n:g}") with digit-boundary lookarounds, which had two real bugs
+    on real filings: (1) it MISSED grouping commas and trailing zeros — "1,577" was
+    not found for 1577, "8.70" not found for 8.7 — a false refusal (safe, but lost
+    coverage); (2) worse, a grouping comma broke the boundary so 999 spuriously
+    matched INSIDE "1,999" — a false ACCEPT, the dangerous direction. Parsing every
+    number token to a float and comparing values fixes both: "1,577"->1577.0 equals
+    the claim, and "1,999"->1999.0 does not equal 999. Exact equality, so a different
+    number (150 vs 50, 41.25 vs 41.2) still correctly fails.
     """
     if value is None:
         return False
@@ -298,10 +309,13 @@ def _number_in(snippet: str, value) -> bool:
         n = float(value)
     except (TypeError, ValueError):
         return False
-    token = f"{n:g}"  # 91.0 -> "91", 41.2 -> "41.2" (drops noise, keeps real decimals)
-    # Not flanked by another digit or a decimal point == it's this number, standalone.
-    pattern = r"(?<![\d.])" + re.escape(token) + r"(?![\d.])"
-    return re.search(pattern, snippet) is not None
+    for m in _NUMBER_TOKEN.finditer(snippet or ""):
+        try:
+            if float(m.group(0).replace(",", "")) == n:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 def _ground_concentration(clean_text: str, prop: dict):
